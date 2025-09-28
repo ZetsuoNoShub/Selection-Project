@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Space Shooter Game</title>
+  <style>
+    body {
+      margin: 0;
+      background: #000;
+      color: white;
+      font-family: Arial, sans-serif;
+      text-align: center;
+    }
+    canvas {
+      background: #111;
+      display: block;
+      margin: 20px auto;
+      border: 2px solid #fff;
+    }
+    #startScreen, #gameOverScreen, #winScreen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.8);
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+    button {
+      padding: 10px 20px;
+      font-size: 18px;
+      margin-top: 20px;
+      cursor: pointer;
+      background-color: #0f0;
+      border: none;
+      color: black;
+      font-weight: bold;
+    }
+    #gameOverScreen, #winScreen { display: none; }
+    /* Boss HP Bar Styling */
+    #bossHpBarContainer {
+        position: absolute;
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 400px;
+        height: 15px;
+        background-color: #333;
+        border: 2px solid #fff;
+        display: none;
+        z-index: 10;
+    }
+    #bossHpBar {
+        height: 100%;
+        width: 100%;
+        background-color: #f00;
+        transition: width 0.1s;
+    }
+    #bossHpText {
+        position: absolute;
+        width: 100%;
+        text-align: center;
+        line-height: 15px;
+        font-size: 12px;
+        font-weight: bold;
+        color: white;
+        text-shadow: 1px 1px 2px black;
+    }
+    /* Loading Screen */
+    #loadingScreen {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: rgba(0,0,0,1);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        color: white;
+        font-size: 24px;
+        z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <div id="loadingScreen">Loading Assets...</div>
+    
+  <div id="startScreen" style="display: none;">
+    <h1>Space Shooter</h1>
+    <p>Use <strong>Arrow Keys</strong> to move and <strong>Spacebar</strong> to shoot!</p>
+    <button id="startButton">Start Game</button>
+  </div>
+
+  <div id="gameOverScreen">
+    <h1>Game Over</h1>
+    <p>Your Score: <span id="finalScore">0</span></p>
+    <button id="restartButton">Restart</button>
+  </div>
+
+  <div id="winScreen">
+    <h1>You Won!</h1>
+    <p>Your Score: <span id="winScore">0</span></p>
+    <button id="restartWinButton">Play Again</button>
+  </div>
+    
+  <div id="bossHpBarContainer">
+      <div id="bossHpText">BOSS HP</div>
+      <div id="bossHpBar"></div>
+  </div>
+
+  <p>Score: <span id="score">0</span> | Lives: <span id="lives">3</span></p>
+
+  <canvas id="gameCanvas" width="800" height="600"></canvas>
+
+  <script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const startScreen = document.getElementById('startScreen');
+    const gameOverScreen = document.getElementById('gameOverScreen');
+    const winScreen = document.getElementById('winScreen');
+    const loadingScreen = document.getElementById('loadingScreen');
+    const startButton = document.getElementById('startButton');
+    const restartButton = document.getElementById('restartButton');
+    const restartWinButton = document.getElementById('restartWinButton');
+    const scoreElement = document.getElementById('score');
+    const finalScoreElement = document.getElementById('finalScore');
+    const winScoreElement = document.getElementById('winScore');
+    const livesElement = document.getElementById('lives');
+    const bossHpBarContainer = document.getElementById('bossHpBarContainer');
+    const bossHpBar = document.getElementById('bossHpBar');
+    
+    let gameRunning = false;
+    let score = 0;
+    let lives = 3;
+    let lastShootTime = 0;
+    const shootInterval = 150;
+    const BOSS_HP_MAX = 500;
+    
+    // Image Loading Setup
+    let assetsLoaded = 0;
+    const assetsToLoad = 5; // 1 player + 1 boss + 3 enemies
+
+    function assetLoaded() {
+        assetsLoaded++;
+        if (assetsLoaded === assetsToLoad) {
+            loadingScreen.style.display = 'none';
+            startScreen.style.display = 'flex';
+            draw();
+        }
+    }
+    
+    // Create placeholder images for fallback
+    function createPlaceholderImage(color) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 50;
+        canvas.height = 50;
+        const ctx = canvas.getContext('2d');
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 50, 50);
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(0, 0, 50, 50);
+        return canvas;
+    }
+    
+    // Image loading with error handling
+    const playerImg = new Image();
+    playerImg.onload = assetLoaded;
+    playerImg.onerror = function() {
+        console.error("Failed to load player image");
+        playerImg.src = createPlaceholderImage('#0f0').toDataURL();
+        assetLoaded();
+    };
+    playerImg.src = 'C:\Users\subha\OneDrive\Desktop\•\player_ship.webp';
+
+    const bossImg = new Image();
+    bossImg.onload = assetLoaded;
+    bossImg.onerror = function() {
+        console.error("Failed to load boss image");
+        bossImg.src = createPlaceholderImage('#f00').toDataURL();
+        assetLoaded();
+    };
+    bossImg.src = 'C:\Users\subha\OneDrive\Desktop\•\boss1.webp';
+
+    const enemyImgs = [new Image(), new Image(), new Image()];
+    enemyImgs.forEach((img, index) => {
+        img.onload = assetLoaded;
+        img.onerror = function() {
+            console.error(`Failed to load enemy image ${index + 1}`);
+            img.src = createPlaceholderImage('#888').toDataURL();
+            assetLoaded();
+        };
+    });
+    enemyImgs[0].src = 'C:\Users\subha\OneDrive\Desktop\•enemy_1.webp-9188f422-2554-4af3-aa7f-da575a320879';
+    enemyImgs[1].src = 'C:\Users\subha\OneDrive\Desktop\•enemy_2.webp-e43784b8-e51f-4589-9d81-f8fafc2b9de2';
+    enemyImgs[2].src = 'C:\Users\subha\OneDrive\Desktop\•enemy_3.webp-091121bc-ff86-439d-a9d1-3f96c2051680';
+    
+    // BGM with error handling
+    const bossBGM = new Audio();
+    bossBGM.loop = true;
+    
+    const player = {
+        x: canvas.width / 2 - 25,
+        y: canvas.height - 70,
+        width: 50,
+        height: 50,
+        speed: 5,
+        color: '#0f0'
+    };
+    
+    let bullets = [];
+    let asteroids = [];
+    let enemyBullets = [];
+    let bossBullets = [];
+    let boss = null;
+
+    const keys = {
+        ArrowLeft: false,
+        ArrowRight: false,
+        ArrowUp: false,
+        ArrowDown: false,
+        ' ': false
+    };
+    
+    window.addEventListener('keydown', (e) => {
+        if (e.code === "Space") {
+            keys[' '] = true;
+            e.preventDefault(); // Prevent spacebar from scrolling the page
+        } else if (keys.hasOwnProperty(e.key)) {
+            keys[e.key] = true;
+        }
+    });
+    
+    window.addEventListener('keyup', (e) => {
+        if (e.code === "Space") {
+            keys[' '] = false;
+        } else if (keys.hasOwnProperty(e.key)) {
+            keys[e.key] = false;
+        }
+    });
+    
+    startButton.addEventListener('click', startGame);
+    restartButton.addEventListener('click', startGame);
+    restartWinButton.addEventListener('click', startGame);
+    
+    function stopBGM() {
+        bossBGM.pause();
+        bossBGM.currentTime = 0;
+    }
+
+    function startGame() {
+        stopBGM();
+
+        gameRunning = true;
+        score = 0;
+        lives = 3;
+        bullets = [];
+        asteroids = [];
+        enemyBullets = [];
+        bossBullets = [];
+        boss = null;
+        
+        player.x = canvas.width / 2 - player.width / 2;
+        player.y = canvas.height - 70;
+        
+        startScreen.style.display = 'none';
+        gameOverScreen.style.display = 'none';
+        winScreen.style.display = 'none';
+        bossHpBarContainer.style.display = 'none';
+        
+        updateScore();
+        requestAnimationFrame(gameLoop);
+    }
+    
+    function gameOver() {
+        gameRunning = false;
+        stopBGM();
+        finalScoreElement.textContent = score;
+        gameOverScreen.style.display = 'flex';
+    }
+
+    function gameWin() {
+        gameRunning = false;
+        stopBGM();
+        winScoreElement.textContent = score;
+        winScreen.style.display = 'flex';
+        bossHpBarContainer.style.display = 'none';
+    }
+    
+    function updateScore() {
+        scoreElement.textContent = score;
+        livesElement.textContent = lives;
+    }
+
+    function updateBossHpBar() {
+        if (boss) {
+            const percent = boss.hp / BOSS_HP_MAX;
+            bossHpBar.style.width = (percent * 100) + '%';
+        }
+    }
+    
+    function createAsteroid() {
+        const size = Math.random() * 20 + 30;
+        asteroids.push({
+            x: Math.random() * (canvas.width - size),
+            y: -size,
+            width: size,
+            height: size,
+            speed: Math.random() * 1.5 + 1.5,
+            image: enemyImgs[Math.floor(Math.random() * enemyImgs.length)]
+        });
+    }
+    
+    function shoot() {
+        bullets.push({
+            x: player.x + player.width / 2 - 2.5,
+            y: player.y,
+            width: 5,
+            height: 10,
+            speed: 10,
+            color: '#ff0'
+        });
+    }
+
+    function asteroidShoot(asteroid) {
+        if (Math.random() < 0.005) {
+            enemyBullets.push({
+                x: asteroid.x + asteroid.width / 2 - 2.5,
+                y: asteroid.y + asteroid.height,
+                width: 5,
+                height: 10,
+                speed: 4,
+                color: '#0ff'
+            });
+        }
+    }
+
+    function createBoss() {
+        // Try to play BGM but don't force it
+        bossBGM.play().catch(e => {
+            console.log("BGM autoplay blocked. User interaction required.");
+        });
+
+        boss = {
+            x: canvas.width / 2 - 150,
+            y: 50,
+            width: 300,
+            height: 150,
+            hp: BOSS_HP_MAX,
+            speed: 1.5,
+            direction: 1,
+            color: "#f00"
+        };
+        bossHpBarContainer.style.display = 'block';
+        updateBossHpBar();
+    }
+
+    function updateBoss() {
+        if (!boss) return;
+
+        boss.x += boss.speed * boss.direction;
+        if (boss.x <= 50 || boss.x + boss.width >= canvas.width - 50) {
+            boss.direction *= -1;
+        }
+
+        // Boss shooting patterns
+        if (Math.random() < 0.008) {
+            bossMultiDirectionalShoot(8, 4, "#f80");
+        }
+        if (Math.random() < 0.02) {
+            bossShootDirect();
+        }
+    }
+
+    function bossShootDirect() {
+        if (!boss) return;
+        bossBullets.push({
+            x: boss.x + boss.width / 2 - 5,
+            y: boss.y + boss.height,
+            width: 10,
+            height: 20,
+            speed: 5,
+            color: "#f80",
+            velX: 0,
+            velY: 5
+        });
+    }
+
+    function bossMultiDirectionalShoot(count, speed, color) {
+        if (!boss) return;
+
+        const bulletCenter = { x: boss.x + boss.width / 2, y: boss.y + boss.height };
+        const angleSpread = 120;
+        const startAngle = 90 - angleSpread / 2;
+
+        for (let i = 0; i < count; i++) {
+            const angle = startAngle + (angleSpread / (count - 1)) * i;
+            const radians = angle * (Math.PI / 180);
+
+            const velX = speed * Math.cos(radians);
+            const velY = speed * Math.sin(radians);
+
+            bossBullets.push({
+                x: bulletCenter.x - 5,
+                y: bulletCenter.y,
+                width: 10,
+                height: 10,
+                speed: speed,
+                color: color,
+                velX: velX,
+                velY: velY
+            });
+        }
+    }
+
+    function update() {
+        if (!gameRunning) return;
+        
+        const now = Date.now();
+
+        // Player movement
+        if (keys.ArrowLeft && player.x > 0) player.x -= player.speed;
+        if (keys.ArrowRight && player.x < canvas.width - player.width) player.x += player.speed;
+        if (keys.ArrowUp && player.y > 0) player.y -= player.speed;
+        if (keys.ArrowDown && player.y < canvas.height - player.height) player.y += player.speed;
+        
+        // Shooting
+        if (keys[' '] && now - lastShootTime > shootInterval) {
+            shoot();
+            lastShootTime = now;
+        }
+        
+        // Update player bullets
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            bullets[i].y -= bullets[i].speed;
+            if (bullets[i].y < 0) bullets.splice(i, 1);
+        }
+        
+        // Update asteroids
+        for (let i = asteroids.length - 1; i >= 0; i--) {
+            let asteroid = asteroids[i];
+            asteroid.y += asteroid.speed;
+
+            // Enemy shooting (only when boss is not active)
+            if (!boss && Math.random() < 0.005) {
+                asteroidShoot(asteroid);
+            }
+
+            // Remove asteroids that go off screen
+            if (asteroid.y > canvas.height) {
+                asteroids.splice(i, 1);
+            }
+        }
+        
+        // Collision: Player bullets vs Asteroids
+        for (let i = bullets.length - 1; i >= 0; i--) {
+            for (let j = asteroids.length - 1; j >= 0; j--) {
+                if (isColliding(bullets[i], asteroids[j])) {
+                    bullets.splice(i, 1);
+                    asteroids.splice(j, 1);
+                    score += 10;
+                    updateScore();
+                    break;
+                }
+            }
+        }
+        
+        // Collision: Player vs Asteroids
+        for (let i = asteroids.length - 1; i >= 0; i--) {
+            if (isColliding(player, asteroids[i])) {
+                asteroids.splice(i, 1);
+                lives--;
+                updateScore();
+                if (lives <= 0) {
+                    gameOver();
+                    return;
+                }
+            }
+        }
+
+        // Update enemy bullets
+        for (let i = enemyBullets.length - 1; i >= 0; i--) {
+            enemyBullets[i].y += enemyBullets[i].speed;
+            if (enemyBullets[i].y > canvas.height) {
+                enemyBullets.splice(i, 1);
+                continue;
+            }
+            if (isColliding(enemyBullets[i], player)) {
+                enemyBullets.splice(i, 1);
+                lives--;
+                updateScore();
+                if (lives <= 0) {
+                    gameOver();
+                    return;
+                }
+            }
+        }
+        
+        // Game stage logic
+        if (!boss && score < 100 && Math.random() < 0.02) {
+            createAsteroid();
+        }
+
+        // Spawn boss when score reaches 100
+        if (score >= 100 && !boss) {
+            createBoss();
+        }
+
+        // Update boss if it exists
+        if (boss) {
+            updateBoss();
+            
+            // Clear asteroids when boss appears
+            asteroids = [];
+            
+            // Collision: Player bullets vs Boss
+            for (let i = bullets.length - 1; i >= 0; i--) {
+                if (isColliding(bullets[i], boss)) {
+                    bullets.splice(i, 1);
+                    boss.hp--;
+                    updateBossHpBar();
+                    if (boss.hp <= 0) {
+                        score += 500;
+                        updateScore();
+                        gameWin();
+                        return;
+                    }
+                }
+            }
+        }
+
+        // Update boss bullets
+        for (let i = bossBullets.length - 1; i >= 0; i--) {
+            const bullet = bossBullets[i];
+            bullet.x += bullet.velX;
+            bullet.y += bullet.velY;
+
+            // Remove bullets that go off screen
+            if (bullet.y > canvas.height || bullet.x < -10 || bullet.x > canvas.width + 10) {
+                bossBullets.splice(i, 1);
+                continue;
+            }
+            
+            // Collision: Boss bullets vs Player
+            if (isColliding(bullet, player)) {
+                bossBullets.splice(i, 1);
+                lives--;
+                updateScore();
+                if (lives <= 0) {
+                    gameOver();
+                    return;
+                }
+            }
+        }
+    }
+    
+    function isColliding(obj1, obj2) {
+        return obj1.x < obj2.x + obj2.width &&
+               obj1.x + obj1.width > obj2.x &&
+               obj1.y < obj2.y + obj2.height &&
+               obj1.y + obj1.height > obj2.y;
+    }
+    
+    function draw() {
+        ctx.fillStyle = '#111';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Draw player
+        drawImageSafe(playerImg, player.x, player.y, player.width, player.height, player.color);
+        
+        // Draw player bullets
+        ctx.fillStyle = '#ff0';
+        for (let bullet of bullets) {
+            ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+        }
+        
+        // Draw asteroids
+        for (let asteroid of asteroids) {
+            drawImageSafe(asteroid.image, asteroid.x, asteroid.y, asteroid.width, asteroid.height, '#888');
+        }
+
+        // Draw enemy bullets
+        ctx.fillStyle = '#0ff';
+        for (let bullet of enemyBullets) {
+            ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+        }
+
+        // Draw boss
+        if (boss) {
+            drawImageSafe(bossImg, boss.x, boss.y, boss.width, boss.height, boss.color);
+        }
+
+        // Draw boss bullets
+        for (let bullet of bossBullets) {
+            ctx.fillStyle = bullet.color;
+            ctx.fillRect(bullet.x, bullet.y, bullet.width, bullet.height);
+        }
+    }
+    
+    // Safe image drawing function
+    function drawImageSafe(img, x, y, w, h, fallbackColor) {
+        if (img.complete && img.naturalWidth !== 0) {
+            ctx.drawImage(img, x, y, w, h);
+        } else {
+            ctx.fillStyle = fallbackColor;
+            ctx.fillRect(x, y, w, h);
+            ctx.strokeStyle = 'white';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
+        }
+    }
+    
+    function gameLoop() {
+        if (!gameRunning) return;
+        update();
+        draw();
+        requestAnimationFrame(gameLoop);
+    }
+    
+    // Initial draw
+    draw();
+  </script>
+</body>
+</html>
